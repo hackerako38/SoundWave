@@ -5,15 +5,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // and expose them as window.firebase* globals.
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const FIREBASE_CONFIG = {
-  // Users should replace these with their own Firebase project config
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
-};
+https://my-yt-ai-agent-dzj4wjk1q-hackerako38s-projects.vercel.app
 
 // Internet Archive free/legal music collections
 const IA_SEARCH_URL = "https://archive.org/advancedsearch.php";
