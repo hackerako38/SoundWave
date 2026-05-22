@@ -1,0 +1,409 @@
+c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+          </svg>
+          Continue with Google
+        </button>
+
+        <button className="google-btn" onClick={handleGuest} style={{ opacity: .7, fontSize: 13 }}>
+          🎵 Continue as Guest (no account needed)
+        </button>
+
+        <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", lineHeight: 1.5 }}>
+          Replace <code style={{ color: "var(--accent2)", fontSize: 10 }}>FIREBASE_CONFIG</code> at the top of the file with your Firebase project credentials to enable auth.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TRACK CARD ───────────────────────────────────────────────────────────────
+function TrackCard({ track, isPlaying, onClick }) {
+  const [artError, setArtError] = useState(false);
+
+  return (
+    <div className={`track-card ${isPlaying ? "playing" : ""}`} onClick={onClick}>
+      <div className="track-art">
+        {!artError && track.art ? (
+          <img src={track.art} alt="" onError={() => setArtError(true)} />
+        ) : (
+          <span>🎵</span>
+        )}
+        <div className="track-art-overlay">
+          {isPlaying ? (
+            <div className="eq">
+              <div className="eq-bar" />
+              <div className="eq-bar" />
+              <div className="eq-bar" />
+            </div>
+          ) : (
+            <span className="play-icon">▶</span>
+          )}
+        </div>
+      </div>
+      <div className="track-info">
+        <div className="track-name">{truncate(track.title, 40)}</div>
+        <div className="track-artist">{truncate(track.artist, 30)}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PLAYER BAR ───────────────────────────────────────────────────────────────
+function PlayerBar({ queue, currentIdx, playing, onPlayPause, onPrev, onNext, onSeek, audioRef }) {
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.8);
+  const [artError, setArtError] = useState(false);
+  const track = queue[currentIdx];
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onTime = () => setProgress(audio.currentTime);
+    const onDur = () => setDuration(audio.duration);
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("durationchange", onDur);
+    return () => { audio.removeEventListener("timeupdate", onTime); audio.removeEventListener("durationchange", onDur); };
+  }, [audioRef]);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume;
+  }, [volume, audioRef]);
+
+  useEffect(() => { setArtError(false); }, [track?.id]);
+
+  if (!track) return (
+    <div className="player" style={{ justifyContent: "center" }}>
+      <div style={{ color: "var(--muted)", fontSize: 14 }}>Select a track to play</div>
+    </div>
+  );
+
+  const pct = duration ? (progress / duration) * 100 : 0;
+
+  const handleProgressClick = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    onSeek(ratio * duration);
+  };
+
+  return (
+    <div className="player">
+      {/* Left: track info */}
+      <div className="player-track">
+        <div className="player-thumb">
+          {!artError && track.art ? (
+            <img src={track.art} alt="" onError={() => setArtError(true)} />
+          ) : "🎵"}
+        </div>
+        <div className="player-meta">
+          <div className="player-title">{truncate(track.title, 35)}</div>
+          <div className="player-artist">{truncate(track.artist, 30)}</div>
+        </div>
+      </div>
+
+      {/* Center: controls + progress */}
+      <div className="player-controls">
+        <div className="player-btns">
+          <button className="ctrl-btn" onClick={onPrev} title="Previous">⏮</button>
+          <button className="play-btn" onClick={onPlayPause}>
+            {playing ? "⏸" : "▶"}
+          </button>
+          <button className="ctrl-btn" onClick={onNext} title="Next">⏭</button>
+        </div>
+        <div className="progress-row">
+          <span className="time-label">{formatTime(progress)}</span>
+          <div className="progress-track" onClick={handleProgressClick}>
+            <div className="progress-fill" style={{ width: `${pct}%` }} />
+          </div>
+          <span className="time-label">{formatTime(duration)}</span>
+        </div>
+      </div>
+
+      {/* Right: volume */}
+      <div className="player-right">
+        <span style={{ fontSize: 16, color: "var(--muted)" }}>🔊</span>
+        <input
+          className="vol-slider"
+          type="range" min="0" max="1" step="0.01"
+          value={volume}
+          onChange={(e) => setVolume(parseFloat(e.target.value))}
+          style={{ background: `linear-gradient(90deg, var(--text) ${volume * 100}%, var(--border) ${volume * 100}%)` }}
+        />
+        <span style={{ fontSize: 12, color: "var(--muted)", width: 32, textAlign: "right" }}>
+          {Math.round(volume * 100)}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function App() {
+  const [user, setUser] = useState(null);
+  const [view, setView] = useState("browse");
+  const [activeCollection, setActiveCollection] = useState(COLLECTIONS[2]); // netlabels (CC music)
+  const [items, setItems] = useState([]); // IA search results (identifiers)
+  const [queue, setQueue] = useState([]);
+  const [currentIdx, setCurrentIdx] = useState(-1);
+  const [playing, setPlaying] = useState(false);
+  const [loadingTracks, setLoadingTracks] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [search, setSearch] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const audioRef = useRef(new Audio());
+
+  // ── Audio events
+  useEffect(() => {
+    const audio = audioRef.current;
+    const onEnded = () => handleNext();
+    audio.addEventListener("ended", onEnded);
+    return () => audio.removeEventListener("ended", onEnded);
+  }, [currentIdx, queue]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (queue[currentIdx]) {
+      if (audio.src !== queue[currentIdx].url) {
+        audio.src = queue[currentIdx].url;
+        audio.load();
+      }
+      if (playing) audio.play().catch(() => {});
+      else audio.pause();
+    }
+  }, [currentIdx, queue]);
+
+  useEffect(() => {
+    if (playing) audioRef.current.play().catch(() => {});
+    else audioRef.current.pause();
+  }, [playing]);
+
+  // ── Load collection
+  useEffect(() => {
+    loadCollection();
+  }, [activeCollection, searchTerm]);
+
+  async function loadCollection() {
+    setLoadingTracks(true);
+    setItems([]);
+    setQueue([]);
+    try {
+      const docs = await searchIA(searchTerm, activeCollection.id, 24);
+      setItems(docs);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingTracks(false);
+    }
+  }
+
+  // ── Click album → load files → play first
+  async function handleItemClick(doc) {
+    setLoadingFiles(true);
+    try {
+      const tracks = await getIAFiles(doc.identifier);
+      if (tracks.length) {
+        setQueue(tracks);
+        setCurrentIdx(0);
+        setPlaying(true);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingFiles(false);
+    }
+  }
+
+  function handleTrackClick(idx) {
+    if (idx === currentIdx) {
+      setPlaying((p) => !p);
+    } else {
+      setCurrentIdx(idx);
+      setPlaying(true);
+    }
+  }
+
+  function handleNext() {
+    if (currentIdx < queue.length - 1) setCurrentIdx((i) => i + 1);
+    else setCurrentIdx(0);
+    setPlaying(true);
+  }
+
+  function handlePrev() {
+    if (currentIdx > 0) setCurrentIdx((i) => i - 1);
+    else setCurrentIdx(queue.length - 1);
+    setPlaying(true);
+  }
+
+  function handleSeek(t) {
+    audioRef.current.currentTime = t;
+  }
+
+  function handleSignOut() {
+    if (window.firebase?.auth) window.firebase.auth().signOut().catch(() => {});
+    setUser(null);
+    setQueue([]);
+    setCurrentIdx(-1);
+    setPlaying(false);
+    audioRef.current.pause();
+    audioRef.current.src = "";
+  }
+
+  if (!user) return <AuthScreen onAuth={setUser} />;
+
+  const initials = (user.email || "G").slice(0, 1).toUpperCase();
+
+  return (
+    <div className="app">
+      {/* ── Sidebar ── */}
+      <aside className="sidebar">
+        <div className="sidebar-logo">Sound<span>Wave</span></div>
+
+        <div className="sidebar-section">Browse</div>
+        {["browse", "queue"].map((v) => (
+          <div key={v} className={`sidebar-item ${view === v ? "active" : ""}`} onClick={() => setView(v)}>
+            <span>{v === "browse" ? "🎵" : "📋"}</span>
+            {v === "browse" ? "Discover" : "Queue"}
+          </div>
+        ))}
+
+        <div className="sidebar-section" style={{ marginTop: 8 }}>Collections</div>
+        <div className="sidebar-collections">
+          {COLLECTIONS.map((c) => (
+            <div
+              key={c.id}
+              className={`sidebar-item ${activeCollection.id === c.id ? "active" : ""}`}
+              onClick={() => { setActiveCollection(c); setView("browse"); }}
+            >
+              <span className="collection-dot" style={{ background: c.color }} />
+              {c.label}
+            </div>
+          ))}
+        </div>
+
+        <div className="sidebar-bottom">
+          <div className="user-avatar">{initials}</div>
+          <div className="user-email">{user.email}</div>
+          <button className="signout-btn" onClick={handleSignOut} title="Sign out">⏏</button>
+        </div>
+      </aside>
+
+      {/* ── Main ── */}
+      <main className="main">
+        {view === "browse" && (
+          <>
+            <div className="main-header">
+              <div>
+                <div className="main-title">{activeCollection.label}</div>
+                <div className="main-subtitle">
+                  Free, legal music from the Internet Archive &nbsp;
+                  <span className="tag tag-cc">Creative Commons</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="search-wrap">
+              <div className="search-container">
+                <span className="search-icon">🔍</span>
+                <input
+                  className="search-box"
+                  placeholder="Search artists, albums, titles…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && setSearchTerm(search)}
+                />
+              </div>
+            </div>
+
+            {loadingTracks ? (
+              <div className="loading"><div className="spinner" /><span>Loading music…</span></div>
+            ) : loadingFiles ? (
+              <div className="loading"><div className="spinner" /><span>Loading tracks…</span></div>
+            ) : items.length === 0 ? (
+              <div className="empty"><div className="empty-icon">🎸</div><div>No results found. Try a different search.</div></div>
+            ) : (
+              <div className="tracks-grid">
+                {items.map((doc) => {
+                  const isPlaying = queue[currentIdx]?.identifier === doc.identifier && playing;
+                  return (
+                    <TrackCard
+                      key={doc.identifier}
+                      track={{
+                        id: doc.identifier,
+                        title: doc.title || doc.identifier,
+                        artist: Array.isArray(doc.creator) ? doc.creator[0] : (doc.creator || "Unknown"),
+                        art: `https://archive.org/services/img/${doc.identifier}`,
+                      }}
+                      isPlaying={isPlaying}
+                      onClick={() => handleItemClick(doc)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {view === "queue" && (
+          <>
+            <div className="main-header">
+              <div>
+                <div className="main-title">Queue</div>
+                <div className="main-subtitle">{queue.length} track{queue.length !== 1 ? "s" : ""}</div>
+              </div>
+            </div>
+            {queue.length === 0 ? (
+              <div className="empty"><div className="empty-icon">📋</div><div>Your queue is empty. Browse and play an album to get started.</div></div>
+            ) : (
+              <div style={{ padding: "16px 32px 120px", display: "flex", flexDirection: "column", gap: 4 }}>
+                {queue.map((t, i) => (
+                  <div
+                    key={t.id}
+                    onClick={() => handleTrackClick(i)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 14,
+                      padding: "10px 14px", borderRadius: 10, cursor: "pointer",
+                      background: i === currentIdx ? "rgba(255,61,110,.1)" : "transparent",
+                      border: `1px solid ${i === currentIdx ? "var(--accent)" : "transparent"}`,
+                      transition: "all .15s",
+                    }}
+                  >
+                    <span style={{ width: 24, textAlign: "right", fontSize: 13, color: "var(--muted)", fontFamily: "DM Mono" }}>
+                      {i === currentIdx && playing ? (
+                        <span style={{ color: "var(--accent)" }}>▶</span>
+                      ) : i + 1}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: i === currentIdx ? 600 : 400, color: i === currentIdx ? "var(--accent)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {truncate(t.title, 60)}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{truncate(t.artist, 40)}</div>
+                    </div>
+                    {t.duration && <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "DM Mono", flexShrink: 0 }}>{formatTime(t.duration)}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      {/* ── Player ── */}
+      <div className="player-bar">
+        <PlayerBar
+          queue={queue}
+          currentIdx={currentIdx}
+          playing={playing}
+          onPlayPause={() => setPlaying((p) => !p)}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          onSeek={handleSeek}
+          audioRef={audioRef}
+        />
+      </div>
+
+      <style>{css}</style>
+    </div>
+  );
+}
+
+export default App;
